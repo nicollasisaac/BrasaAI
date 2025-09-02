@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Pesos/modelos e arquivos grandes
+weights/
+*.safetensors
+*.pt
+*.pth
+*.bin
+*.onnx
+*.ckpt
+*.tflite
+*.h5
+*.zip
+*.tar
+*.tar.gz
+
+# Dados e saídas
+data/
+outputs/
+runs/
