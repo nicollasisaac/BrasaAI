@@ -1,0 +1,7 @@
+[DEFAULT]
+user=ocid1.user.oc1..aaaaaaaaq5mxzpnrg6crob7v3yuilrkjsqrcrcqknvavo5ghx3kthfull4ta
+fingerprint=0b:39:63:2f:79:8c:a4:35:21:d4:e8:9c:f3:1d:af:41
+tenancy=ocid1.tenancy.oc1..aaaaaaaaoi6b5sxlv4z773boczybqz3h2vspvvru42jysvizl77lky22ijaq
+region=sa-saopaulo-1
+key_file=C:\Users\Inteli\Documents\GitHub\llm\.oci\GUSTAVO.SANT.ANA@ORACLE.COM-2025-05-05T15_37_21.483Z.pem
+ORACLE_USE_AI=1
