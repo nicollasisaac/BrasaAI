@@ -1,171 +1,171 @@
+# agent/omnitool/gradio/agent/llm_utils/oaiclient.py
+# Requisitos extras: pip install requests
+import os, json
+from typing import Tuple, List, Dict, Any
+import requests  # usado no backend gemini
 
-import os
-import json
-import base64
-import requests
-from typing import List, Dict, Any, Tuple
+def _mensagens_para_prompt(messages: List[Dict[str, Any]], system: str) -> str:
+    partes = []
+    if system:
+        partes.append(f"[System]\n{system}\n")
+    for i, msg in enumerate(messages or []):
+        role = (msg.get("role") or "user").title()
+        partes.append(f"[{role} #{i+1}]")
+        content = msg.get("content", [])
+        if isinstance(content, str):
+            partes.append(content)
+        elif isinstance(content, list):
+            for c in content:
+                if isinstance(c, str):
+                    partes.append(c)
+                elif isinstance(c, dict):
+                    partes.append(c.get("text", str(c)))
+        else:
+            partes.append(str(content))
+        partes.append("")
+    return "\n".join(partes).strip()
 
-# ======== Helpers from your codebase (import-free light stubs) =========
-def is_image_path(p: str) -> bool:
-    p = (p or "").lower()
-    return any(p.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"])
+# ---------------- GEMINI ----------------
+def _gemini_require_key():
+    key = os.environ.get("GEMINI_API_KEY", "AIzaSyD7_KEeVR-43uZzciO6epiaFmfkpQp128A").strip()
+    if not key:
+        raise RuntimeError("GEMINI_API_KEY não definido")
+    return key
 
-def encode_image(path: str) -> str:
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
+def _messages_to_gemini_contents(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    contents = []
+    for msg in messages or []:
+        role = msg.get("role", "user")
+        content = msg.get("content", [])
+        parts = []
+        if isinstance(content, str):
+            parts.append({"text": content})
+        elif isinstance(content, list):
+            for c in content:
+                if isinstance(c, str):
+                    parts.append({"text": c})
+                elif isinstance(c, dict):
+                    t = c.get("text")
+                    if t is None:
+                        t = json.dumps(c, ensure_ascii=False)
+                    parts.append({"text": t})
+                else:
+                    parts.append({"text": str(c)})
+        else:
+            parts.append({"text": str(content)})
+        contents.append({"role": role, "parts": parts})
+    return contents
 
-# ===============================================================
-# 1) OpenAI compatible client (unchanged behavior, a bit hardened)
-# ===============================================================
-def run_oai_interleaved(messages: list, system: str, model_name: str, api_key: str, max_tokens=256, temperature=0, provider_base_url: str = "https://api.openai.com/v1"):
-    headers = {"Content-Type": "application/json",
-               "Authorization": f"Bearer {api_key}"}
-    final_messages = [{"role": "system", "content": system}]
+def _gemini_call(messages, system, max_tokens, temperature) -> str:
+    api_root = os.environ.get("GEMINI_API_ROOT", "https://generativelanguage.googleapis.com/v1beta").rstrip("/")
+    model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    key = _gemini_require_key()
+    url = f"{api_root}/models/{model}:generateContent"
 
-    if isinstance(messages, list):
-        for item in messages:
-            contents = []
-            if isinstance(item, dict):
-                for cnt in item.get("content", []):
-                    if isinstance(cnt, str):
-                        if is_image_path(cnt) and 'o3-mini' not in model_name:
-                            # o3-mini não suporta imagens
-                            base64_image = encode_image(cnt)
-                            content = {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-                        else:
-                            content = {"type": "text", "text": cnt}
-                    else:
-                        # bloco de texto (Anthropic/TextBlock-like)
-                        content = {"type": "text", "text": str(cnt)}
-                    contents.append(content)
-                message = {"role": 'user', "content": contents}
-            else:  # string simples
-                contents.append({"type": "text", "text": item})
-                message = {"role": "user", "content": contents}
-            final_messages.append(message)
-    elif isinstance(messages, str):
-        final_messages = [{"role": "system", "content": system}, {"role": "user", "content": messages}]
-
-    payload = {
-        "model": model_name,
-        "messages": final_messages,
-        "temperature": temperature,
+    payload: Dict[str, Any] = {
+        "contents": _messages_to_gemini_contents(messages),
+        "generationConfig": {
+            "temperature": float(temperature),
+            "maxOutputTokens": int(max_tokens),
+            "topP": 1,
+            "topK": 1
+        },
     }
-    if 'o1' in model_name or 'o3-mini' in model_name:
-        payload['reasoning_effort'] = 'low'
-        payload['max_completion_tokens'] = max_tokens
-    else:
-        payload['max_tokens'] = max_tokens
+    if system:
+        payload["systemInstruction"] = {"parts": [{"text": system}]}
 
-    resp = requests.post(f"{provider_base_url}/chat/completions", headers=headers, json=payload, timeout=180)
-
-    try:
-        j = resp.json()
-        text = j['choices'][0]['message']['content']
-        token_usage = int(j.get('usage', {}).get('total_tokens', 0))
-        return text, token_usage
-    except Exception as e:
+    r = requests.post(
+        url,
+        headers={"Content-Type": "application/json"},
+        params={"key": key},
+        json=payload,
+        timeout=float(os.environ.get("GEMINI_TIMEOUT", "60")),
+    )
+    if r.status_code != 200:
         try:
-            return resp.json(), 0
+            j = r.json()
+            err = j.get("error") or j
+            raise RuntimeError(f"[GEMINI] HTTP {r.status_code}: {json.dumps(err, ensure_ascii=False)}")
         except Exception:
-            return {"error": f"HTTP {resp.status_code}", "text": resp.text}, 0
+            raise RuntimeError(f"[GEMINI] HTTP {r.status_code}: {r.text[:500]}")
+    data = r.json()
+    cands = data.get("candidates") or []
+    if not cands:
+        pf = data.get("promptFeedback")
+        reason = pf.get("blockReason") if pf else None
+        raise RuntimeError(f"[GEMINI] Sem candidates. promptFeedback={reason}")
+    parts = (cands[0].get("content") or {}).get("parts") or []
+    if parts and isinstance(parts[0], dict) and "text" in parts[0]:
+        return parts[0]["text"]
+    return cands[0].get("text") or json.dumps(parts, ensure_ascii=False)
 
-# ===============================================================
-# 2) OCI GPT‑4.1 Text Chat (Generic) – interleaved wrapper
-#    Flattens messages into a single prompt string.
-# ===============================================================
+# --------------- OCI (lazy import/config) ---------------
+def _oci_call(prompt: str, max_tokens: int, temperature: float) -> str:
+    import oci  # importa só se realmente for usar OCI
 
-HAS_OCI = False
-try:
-    import oci  # type: ignore
-    HAS_OCI = True
-except Exception:
-    HAS_OCI = False
+    def _resolve_config_path() -> str:
+        env_path = os.environ.get("OCI_CONFIG_FILE")
+        candidates = [env_path] if env_path else []
+        candidates += [
+            r"C:\Users\Inteli\Documents\GitHub\BrasaAI\.oci\config",
+            r"C:\Users\Inteli\.oci\config",
+        ]
+        for p in candidates:
+            if p and os.path.isfile(p):
+                print(f"[OCI] usando config: {p}")
+                return p
+        raise FileNotFoundError(f"[OCI] config não encontrado. Tentado: {candidates}")
 
-GPT41_CFG = {
-    "name": "GPT 4.1",
-    "config_path": os.environ.get("OCI_CONFIG_PATH", "latinoamericaai/.oci/config"),
-    "profile": os.environ.get("OCI_CONFIG_PROFILE", "DEFAULT"),
-    "model_id": os.environ.get("OCI_MODEL_OCID", "ocid1.generativeaimodel.oc1.us-chicago-1.amaaaaaask7dceyakhb3pkmf5c6ff7upp3o5sx7kg4bsz6ql6xdeyhlwjpzq"),
-    "compartment": os.environ.get("OCI_COMPARTMENT_OCID", "ocid1.compartment.oc1..aaaaaaaaev2ipyek53f7sck5ibvtnqrp5w2k54qiuk2cikbfati5bk54yhka"),
-    "endpoint": os.environ.get("OCI_ENDPOINT", "https://inference.generativeai.us-chicago-1.oci.oraclecloud.com"),
-}
+    cfg_path = _resolve_config_path()
+    profile = os.environ.get("OCI_PROFILE", "DEFAULT")
+    endpoint = os.environ.get("OCI_ENDPOINT", "https://inference.generativeai.us-chicago-1.oci.oraclecloud.com")
+    model_id = os.environ.get("OCI_MODEL_OCID", "")
+    compartment_id = os.environ.get("OCI_COMPARTMENT_OCID", "")
 
-def _oci_ready() -> bool:
-    return (HAS_OCI
-            and os.path.exists(os.path.expanduser(GPT41_CFG["config_path"]))
-            and str(GPT41_CFG["model_id"]).startswith("ocid1.generativeaimodel")
-            and str(GPT41_CFG["compartment"]).startswith("ocid1.compartment"))
+    if not model_id or not compartment_id:
+        raise RuntimeError("[OCI] OCI_MODEL_OCID e/ou OCI_COMPARTMENT_OCID ausentes")
 
-def _oci_client():
-    cfg = oci.config.from_file(os.path.expanduser(GPT41_CFG["config_path"]), GPT41_CFG["profile"])
-    return oci.generative_ai_inference.GenerativeAiInferenceClient(
-        config=cfg,
-        service_endpoint=GPT41_CFG["endpoint"],
+    client = oci.generative_ai_inference.GenerativeAiInferenceClient(
+        config=oci.config.from_file(cfg_path, profile),
+        service_endpoint=endpoint,
         retry_strategy=oci.retry.NoneRetryStrategy(),
         timeout=(10, 240)
     )
 
-def _oci_chat_details(prompt: str, max_tokens:int=1024, temperature:float=0.2):
     content = oci.generative_ai_inference.models.TextContent(type="TEXT", text=prompt)
     message = oci.generative_ai_inference.models.Message(role="USER", content=[content])
     chat_req = oci.generative_ai_inference.models.GenericChatRequest(
         api_format="GENERIC",
         messages=[message],
-        max_tokens=max_tokens,
-        temperature=temperature,
-        top_p=1,
-        top_k=1,
-        frequency_penalty=0,
-        presence_penalty=0
+        max_tokens=int(max_tokens),
+        temperature=float(temperature),
+        top_p=1, top_k=1,
+        frequency_penalty=0, presence_penalty=0
     )
-    return oci.generative_ai_inference.models.ChatDetails(
-        serving_mode=oci.generative_ai_inference.models.OnDemandServingMode(model_id=GPT41_CFG["model_id"]),
+    details = oci.generative_ai_inference.models.ChatDetails(
+        serving_mode=oci.generative_ai_inference.models.OnDemandServingMode(model_id=model_id),
         chat_request=chat_req,
-        compartment_id=GPT41_CFG["compartment"]
+        compartment_id=compartment_id
     )
-
-def _flatten_to_text(messages: list, system: str) -> str:
-    """Flatten mixed text/image messages to a single text prompt for OCI Text Chat."""
-    parts = []
-    if system:
-        parts.append(f"[System]\n{system}\n")
-    if isinstance(messages, list):
-        for i, item in enumerate(messages):
-            role = item.get("role", "user") if isinstance(item, dict) else "user"
-            parts.append(f"[{role.title()} #{i+1}]")
-            if isinstance(item, dict):
-                for cnt in item.get("content", []):
-                    if isinstance(cnt, str):
-                        if is_image_path(cnt):
-                            parts.append(f"(image omitted: {os.path.basename(cnt)})")
-                        else:
-                            parts.append(str(cnt))
-                    elif isinstance(cnt, dict) and cnt.get("type") == "text":
-                        parts.append(str(cnt.get("text", "")))
-                    else:
-                        parts.append(str(cnt))
-            else:
-                parts.append(str(item))
-            parts.append("")  # blank line
-    else:
-        parts.append(str(messages))
-    return "\n".join(parts).strip()
-
-def run_oci_interleaved(messages: list, system: str, max_tokens=1024, temperature=0.2) -> Tuple[str, int]:
-    """
-    Convert your interleaved messages to a single text prompt and call OCI GPT‑4.1 Generic Chat.
-    Returns (text, token_usage_estimated=0)
-    """
-    if not _oci_ready():
-        raise RuntimeError("OCI não configurado (verifique OCI_* envs, ~/.oci/config, profile e OCIDs).")
-    client = _oci_client()
-    prompt = _flatten_to_text(messages, system)
-    details = _oci_chat_details(prompt, max_tokens=max_tokens, temperature=temperature)
     resp = client.chat(details)
     cr = resp.data.chat_response
-    if hasattr(cr, "choices"):
-        out = cr.choices[0].message.content[0].text
-    else:
-        out = cr.text
-    return out, 0
+    if hasattr(cr, "choices") and cr.choices:
+        return cr.choices[0].message.content[0].text
+    if hasattr(cr, "text"):
+        return cr.text
+    return str(cr)
+
+# ---------------- ENTRYPOINT (mantido) ----------------
+def run_oci_interleaved(messages: list, system: str, max_tokens=1024, temperature=0.2) -> Tuple[str, int]:
+    backend = os.environ.get("LLM_BACKEND", "oci").strip().lower()
+    print(f"[LLM] backend={backend}")  # log explícito
+
+    if backend == "gemini":
+        # usa o formato messages; GEMINI não precisa do prompt concatenado
+        txt = _gemini_call(messages, system, max_tokens, temperature)
+        return txt, 0
+
+    # fallback (comportamento original via OCI)
+    prompt = _mensagens_para_prompt(messages, system)
+    txt = _oci_call(prompt, max_tokens, temperature)
+    return txt, 0
