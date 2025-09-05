@@ -1,21 +1,62 @@
 # agent/omnitool/gradio/app_new.py
-import os, argparse, gradio as gr
-from agent.omnitool.gradio.loop import sampling_loop_sync  # <-- importa via 'agent.*'
+import os
+import argparse
+import gradio as gr
 
-# ===================== Função Principal do Agente =====================
-def run_agent(user_input, omniparser_url):
+# ===== PATCH de schema do Gradio (corrige additionalProperties: true/false) =====
+try:
+    import gradio.blocks as gr_blocks  # type: ignore
+
+    _orig_get_api_info = getattr(gr_blocks.Blocks, "get_api_info", None)
+
+    def _sanitize_schema(obj):
+        if isinstance(obj, dict):
+            new_d = {}
+            for k, v in obj.items():
+                if k == "additionalProperties" and isinstance(v, bool):
+                    # substitui bool por um schema simples aceito pelo gradio_client
+                    new_d[k] = {"type": "string"}
+                else:
+                    new_d[k] = _sanitize_schema(v)
+            return new_d
+        elif isinstance(obj, list):
+            return [_sanitize_schema(x) for x in obj]
+        else:
+            return obj
+
+    def _patched_get_api_info(self):
+        info = _orig_get_api_info(self) if _orig_get_api_info else {}
+        return _sanitize_schema(info)
+
+    if _orig_get_api_info and not getattr(gr_blocks.Blocks, "_brasa_patched_schema", False):
+        gr_blocks.Blocks.get_api_info = _patched_get_api_info  # type: ignore[attr-defined]
+        setattr(gr_blocks.Blocks, "_brasa_patched_schema", True)
+except Exception:
+    pass
+# ===============================================================================
+
+from agent.omnitool.gradio.loop import sampling_loop_sync
+
+def run_agent(user_input: str, omniparser_url: str):
+    """
+    Executa o loop do agente e retorna apenas:
+      - logs (str)
+    """
     msgs = [{"role": "user", "content": [{"type": "text", "text": user_input}]}]
-    outputs = []
+    logs = []
 
-    def out_cb(msg): 
-        outputs.append(str(msg))
-    def tool_cb(tr, name): 
-        outputs.append(f"[{name}] {tr}")
-    def api_cb(resp): 
-        outputs.append(f"[API] {resp}")
+    def out_cb(msg):
+        logs.append(str(msg))
 
-    for _ in sampling_loop_sync(
-        model="omniparser + gemini",  # Ajuste para Gemini
+    def tool_cb(tr, name):
+        logs.append(f"[{name}] {tr}")
+
+    def api_cb(resp):
+        logs.append(f"[API] {resp}")
+
+    # Executa em modo GEMINI
+    for item in sampling_loop_sync(
+        model="omniparser + gemini",
         provider="gemini",
         messages=msgs,
         output_callback=out_cb,
@@ -23,10 +64,12 @@ def run_agent(user_input, omniparser_url):
         api_response_callback=api_cb,
         omniparser_url=omniparser_url,
     ):
-        pass
-    return "\n".join(outputs)
+        # item pode ser None ou dict {"analysis": str, ...}; só texto nos interessa
+        if isinstance(item, dict) and item.get("analysis"):
+            logs.append(f"[analysis] {item['analysis']}")
 
-# ===================== Função de Inicialização =====================
+    return "\n".join(logs)
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--omniparser_server_url", required=True, help="ex.: 127.0.0.1:7860 ou http://10.0.0.12:7860")
@@ -34,64 +77,40 @@ def main():
     ap.add_argument("--port", type=int, default=7865)
     args = ap.parse_args()
 
-    # Normaliza URL do OmniParser
     omni = args.omniparser_server_url
     if not omni.startswith("http"):
         omni = "http://" + omni
 
-    # ===================== Tema Personalizado =====================
-    theme = gr.themes.Default(
-        primary_hue="green", 
-        secondary_hue="green", 
-        neutral_hue="gray"
-    ).set(
-        body_background_fill="#ffffff",
-        body_text_color="#1a1a1a",
-        button_primary_background_fill="#16a34a",  # Verde vibrante
-        button_primary_text_color="#ffffff",
-        button_secondary_background_fill="#86efac",
-        button_secondary_text_color="#064e3b",
-        radius="lg"
-    )
-
-    css = """
-    #title { 
-        font-size: 2.5em; 
-        font-weight: 800; 
-        color: #16a34a; 
-        text-align: center; 
-        margin-bottom: 0.2em;
-    }
-    #desc { 
-        text-align: center; 
-        font-size: 1.2em; 
-        color: #1a1a1a; 
-        margin-bottom: 1em;
-    }
-    """
-
-    # ===================== Layout =====================
-    with gr.Blocks(theme=theme, css=css) as demo:
-        gr.Markdown("# BrasaAI", elem_id="title")
-        gr.Markdown("### 🇧🇷 A AI brasileira que controla o seu notebook!", elem_id="desc")
+    # interface mínima (sem tema customizado e sem imagem)
+    with gr.Blocks(analytics_enabled=False) as demo:
+        gr.Markdown("# BrasaAI — Logs do Agente (Gemini)")
         with gr.Row():
-            with gr.Column(scale=4):
-                chatbot = gr.Textbox(
-                    label="Digite seu comando:",
-                    placeholder="Ex: Abra o Chrome e pesquise por notícias de tecnologia",
+            with gr.Column(scale=5):
+                prompt = gr.Textbox(
+                    label="Comando",
+                    placeholder="Ex: Abra o Slack / Abra youtube.com / Buscar 'Ana Maria Braga bolo'",
                     lines=1
                 )
                 output_box = gr.Textbox(
-                    label="Respostas do Agente",
-                    placeholder="Saída das ações executadas aparecerá aqui...",
-                    lines=10
+                    label="Logs do Agente",
+                    placeholder="Saída textual do agente…",
+                    lines=22
                 )
-                run_button = gr.Button("▶️ Executar", variant="primary")
+                run_button = gr.Button("▶️ Executar")
 
-        run_button.click(fn=lambda text: run_agent(text, omni), inputs=chatbot, outputs=output_box)
+        def _runner(text):
+            return run_agent(text, omni)
 
-    demo.launch(server_name=args.host, server_port=args.port)
+        run_button.click(
+            fn=_runner,
+            inputs=prompt,
+            outputs=output_box
+        )
 
-# ===================== EntryPoint =====================
+    # manter API ativa (schema já sanitizado); share=True pra evitar problema de localhost
+    os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")
+    os.environ.setdefault("GRADIO_TELEMETRY_ENABLED", "False")
+    demo.launch(server_name=args.host, server_port=args.port, share=True, show_api=True)
+
 if __name__ == "__main__":
     main()
