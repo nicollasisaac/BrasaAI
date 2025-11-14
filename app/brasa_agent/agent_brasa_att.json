@@ -1,0 +1,635 @@
+{
+  "name": "agent_brasa",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "d8ef9d72-e99e-4322-8f20-84a92f25e740",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "04aa5444-1892-47b8-b20b-278f3b498522",
+      "name": "Webhook",
+      "webhookId": "d8ef9d72-e99e-4322-8f20-84a92f25e740"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-1.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        208,
+        192
+      ],
+      "id": "5453dcf3-ab38-4b74-82a1-08bf89bda0e1",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "VXJHTbxz4ZZHo3wn",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Você é um OBSERVER de tela para um agente UI. Sua função é:\n1) Descrever sucintamente o que há na tela usando APENAS os dados fornecidos.\n2) Inferir se o objetivo do usuário (\"goal\") JÁ parece atingido (apenas um palpite fundamentado).\n3) Sugerir pistas objetivas para o próximo passo (sem executar planos).\n\nFontes:\n- elements_sample: lista de elementos visíveis (type, text, bbox em pixels).\n- omni: JSON bruto do OmniParser (pode conter OCR em omni.outputs.ocr.texts_raw e elementos com content/bbox normalizados).\n\nREGRAS:\n- NÃO invente textos ou elementos. Use apenas o que está em elements_sample e omni.\n- Seja curto e objetivo.\n- Se o objetivo PARECER atingido com evidências claras, marque done_guess=true. Caso contrário, done_guess=false.\n- Sempre ecoe o round recebido (sem alterar).\n- Saída deve ser SOMENTE JSON válido, sem comentários, sem texto extra.\n\nEsquema de saída (obrigatório):\n{\n  \"round\": <int, mesmo do input>,\n  \"done_guess\": <bool>,\n  \"reason\": \"<string curta explicando o porquê do done_guess>\",\n  \"summary\": \"<1-3 frases do que há na tela>\",\n  \"hints\": [\"<até 5 dicas curtas, ex.: 'clicar Next >\", \"buscar por Gmail' ...>\"],\n  \"evidence\": [\"<trechos exatos de textos visíveis que suportam a conclusão>\"],\n  \"confidence\": <número 0..1>\n}\n\nBoas práticas:\n- Prefira evidências literais (ex.: 'Inbox', 'Gmail', 'Concluído', 'Mensagem enviada').\n- Se não houver fortes sinais de sucesso, mantenha done_guess=false e foque pistas/hints acionáveis (botões, links, campos de busca).\n- Nunca devolva um plano de ação completo; apenas pistas (o Planner decide a ação).\n\ngoal:{{ $json.goal }} \nround: {{ $json.round }}\nelements_sample: {{ $json.omni.outputs.elements }}\nocr_texts (se houver): {{ $json.omni.outputs.ocr }}\n\n",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "6bfc1325-0d10-4c7a-9508-619702164ed8",
+      "name": "AI Agent",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"round\": 3,\n  \"done_guess\": false,\n  \"reason\": \"Não há sinais claros de email/inbox; tela parece de editor/IDE.\",\n  \"summary\": \"Tela com barra superior (File/Edit/View...), itens como 'Visual Studio Code' e vários ícones 'Next'/'Next >'.\",\n  \"hints\": [\n    \"procurar por 'Gmail' ou 'Inbox'\",\n    \"buscar campo de pesquisa\",\n    \"clicar em 'Next >' para avançar a navegação\",\n    \"usar atalho de busca (ex.: CTRL+L ou CTRL+K dependendo do app)\",\n    \"verificar se há ícone/menu de email\"\n  ],\n  \"evidence\": [\n    \"Textos OCR: 'Visual Studio Code', 'EXPLORER', 'OUTPUT', 'TERMINAL'\",\n    \"Elementos: 'Next', 'Next >', 'Try It All'\"\n  ],\n  \"confidence\": 0.32\n}\n",
+        "autoFix": true
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        384,
+        208
+      ],
+      "id": "7dc68fc1-9964-4001-9748-c49110ea2caf",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-1.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        320,
+        416
+      ],
+      "id": "d6168402-f3f5-4ca8-a2c4-e51401ebf102",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "VXJHTbxz4ZZHo3wn",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8d2cd209-d8c5-41b5-b2ef-fcf44239b68d",
+              "leftValue": "={{ $json.output.done_guess }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        560,
+        0
+      ],
+      "id": "c57a1247-6a55-494e-9d49-a29354581683",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Você é o JUDGE (árbitro final) de um agente de UI. Sua tarefa é decidir, com base SOMENTE nos dados fornecidos, se o objetivo (\"goal\") foi atingido na tela atual.\n\nFontes:\n- elements_sample: elementos visíveis (type, text, bbox em pixels).\n- ocr_texts: lista de strings do OCR (omni.outputs.ocr.texts_raw).\n- history: último plano executado e seu resultado.\n- observer (opcional): resumo/hints do Observer.\n\nCRITÉRIOS:\n- DONE = true somente se houver EVIDÊNCIAS CLARAS de que o goal foi atingido (termos-chave coerentes com o objetivo e padrões de UI condizentes).\n- Não invente. Use apenas textos e elementos presentes.\n- Seja conservador: se faltar evidência, done=false.\n- Sempre ecoe o round recebido (sem alterar).\n- NÃO proponha ações; apenas julgue.\n\nEXTRAÇÃO E CHECAGENS (mentais):\n- Extraia palavras/termos-chave do goal (ex.: “abrir email” → {“gmail”, “inbox”, “caixa de entrada”, “compose”}).\n- Procure esses termos em elements_sample.text e ocr_texts.\n- Considere padrões de UI (ex.: lista de mensagens, cabeçalho com ‘Inbox’).\n- Avalie consistência (ex.: “Gmail” presente + “Inbox”/“Caixa de entrada” ou lista aparente).\n\nDados: \n- elements_sample: {{ $('Webhook').item.json.omni.outputs.elements }}\n- ocr_texts: {{ $('Webhook').item.json.omni.outputs.ocr }}\n- history: {{ $('Webhook').item.json.history }}\n- observer : {{ $('AI Agent').item.json.output.reason }}",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        -144
+      ],
+      "id": "6b848832-6bea-4206-841a-54ae24fc0e1b",
+      "name": "AI Agent (JUDGE)",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-1.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        768,
+        80
+      ],
+      "id": "78fce049-01d0-469d-a01a-4fd2b8a0d4be",
+      "name": "Google Gemini Chat Model2",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "VXJHTbxz4ZZHo3wn",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"round\": 0,\n  \"done\": false,\n  \"reason\": \"\",\n  \"confidence\": null,\n  \"evidence\": [],\n  \"signals\": {\n    \"goal_terms\": [],\n    \"found_terms\": [],\n    \"ui_cues\": []\n  }\n}\n",
+        "autoFix": true
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        880,
+        16
+      ],
+      "id": "9b3a062a-110f-436e-93c2-f3ed86e2f370",
+      "name": "Structured Output Parser1"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-1.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        928,
+        128
+      ],
+      "id": "486225ea-7a9b-4a27-aeab-b8b0a88bd21f",
+      "name": "Google Gemini Chat Model3",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "VXJHTbxz4ZZHo3wn",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Você é o PLANNER de um agente de UI. Gere EXATAMENTE UMA AÇÃO por rodada, usando SOMENTE os dados fornecidos.\n\nOBJETIVO\n- Transformar \"{{ $('Webhook').item.json.goal }}\" + contexto da tela em 1 passo atômico e seguro.\n\nFONTES\n- elements_sample: lista de elementos visíveis (type, text, bbox em pixels).\n- ocr_texts: lista de strings do OCR (omni.outputs.ocr.texts_raw).\n- observer: resumo/hints do Observer (opcional).\n- history: { last_plan, last_result } da rodada anterior (opcional).\n\nREGRAS DURAS\n- 1 (uma) ação por resposta.\n- Não invente: use apenas textos presentes em elements_sample ou ocr_texts.\n- Priorize cliques em alvos textuais diretamente relacionados ao goal.\n- Se não houver alvo confiável: use HOTKEY (ex.:[\"win\",\"r\"], [\"ctrl\",\"l\"], [\"ctrl\",\"k\"], [\"win\",\"r\"]) ou WAIT curto (300–800ms).\n- Se o objetivo já parecer atingido, você PODE retornar DONE com reason curta (em geral o DONE virá do Judge).\n- Sempre ecoe o round recebido (sem alterar).\n- SAÍDA: SOMENTE 1 OBJETO JSON (sem array, sem chaves extras como \"output\", sem markdown, sem comentários).\n\nSCHEMA PERMITIDO (oneOf):\n1) CLICK_TEXT:\n{\n  \"type\": \"CLICK_TEXT\",\n  \"target_text\": \"<string não vazia e presente nas fontes>\",\n  \"round\": <int>,\n  \"hint\": \"<opcional>\",\n  \"confidence\": <0..1 opcional>\n}\n\n2) TYPE:\n{\n  \"type\": \"TYPE\",\n  \"text\": \"<string>\",\n  \"enter\": <bool>,\n  \"round\": <int>,\n  \"hint\": \"<opcional>\",\n  \"confidence\": <0..1 opcional>\n}\n\n3) HOTKEY:\n{\n  \"type\": \"HOTKEY\",\n  \"keys\": [\"<tecla1>\",\"<tecla2>\"],\n  \"round\": <int>,\n  \"hint\": \"<opcional>\",\n  \"confidence\": <0..1 opcional>\n}\n\n4) WAIT:\n{\n  \"type\": \"WAIT\",\n  \"ms\": <int entre 300 e 800>,\n  \"round\": <int>,\n  \"hint\": \"<opcional>\",\n  \"confidence\": <0..1 opcional>\n}\n\n5) DONE:\n{\n  \"type\": \"DONE\",\n  \"reason\": \"<string curta>\",\n  \"round\": <int>,\n  \"confidence\": <0..1 opcional>\n}\n\nVALIDAÇÕES RÍGIDAS\n- Nunca retorne array. Nunca retorne {\"output\": ...}. Apenas o objeto da ação.\n- Em CLICK_TEXT: \"target_text\" é OBRIGATÓRIO e NÃO pode ser vazio. Deve existir (case-insensitive) em elements_sample[].text OU em ocr_texts[].\n- Em HOTKEY: sempre inclua \"keys\" (array, min 1).\n- Em WAIT: 300 <= ms <= 800.\n- Sempre inclua \"round\".\n- Se last_result.ok == false, varie a estratégia (outro alvo, HOTKEY, WAIT).\n\nFONTES\n- elements_sample: {{ $('Webhook').item.json.omni.outputs.elements }}\n- ocr_texts: {{ $('Webhook').item.json.omni.outputs.ocr }}\n- observer:{{ $json.output.summary }}\n- history: {{ $('Webhook').item.json.history }}",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        768,
+        272
+      ],
+      "id": "4aa130f6-65e9-4425-bc04-1c0ac152dbaf",
+      "name": "AI Agent1",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-1.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        736,
+        432
+      ],
+      "id": "0dcba955-fd72-4328-b755-e19d0e60b8ca",
+      "name": "Google Gemini Chat Model4",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "VXJHTbxz4ZZHo3wn",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"\",\n  \"target_text\": \"\",\n  \"text\": \"\",\n  \"enter\": false,\n  \"keys\": [],\n  \"ms\": null,\n  \"reason\": \"\",\n  \"round\": 0,\n  \"hint\": \"\",\n  \"confidence\": null\n}\n",
+        "autoFix": true
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        944,
+        480
+      ],
+      "id": "6dfa2f36-bae7-4c92-87b1-fd43bfe8433a",
+      "name": "Structured Output Parser2"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-1.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        880,
+        688
+      ],
+      "id": "ae722950-999f-479c-a15a-a9a2766e0bdb",
+      "name": "Google Gemini Chat Model5",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "VXJHTbxz4ZZHo3wn",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        },
+        "responseBody": "={{ $json.output || $json }}"
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1344,
+        0
+      ],
+      "id": "f6ad2747-73b2-4a5e-8ded-d6c48b91c083",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "goal": "entrar em uma tela que só tenha 5 elementos",
+          "round": 3,
+          "context": {
+            "screen": {
+              "width": 1920,
+              "height": 1080
+            },
+            "ts": "2025-09-13T23:15:00-03:00"
+          },
+          "omni": {
+            "outputs": {
+              "elements": [
+                {
+                  "type": "icon",
+                  "bbox": [
+                    0.0001123682,
+                    0.2528896332,
+                    0.0235614199,
+                    0.2938579321
+                  ],
+                  "interactivity": true,
+                  "content": "Timelineeline (Ctrl+Shift+F2)"
+                },
+                {
+                  "type": "icon",
+                  "bbox": [
+                    0.0331026167,
+                    0.080020763,
+                    0.0396318696,
+                    0.0999544263
+                  ],
+                  "interactivity": true,
+                  "content": "Next"
+                },
+                {
+                  "type": "icon",
+                  "bbox": [
+                    0.026009379,
+                    0.9029204845,
+                    0.0332897753,
+                    0.922238946
+                  ],
+                  "interactivity": true,
+                  "content": "Next >"
+                },
+                {
+                  "type": "icon",
+                  "bbox": [
+                    0.2359540313,
+                    0.5567429662,
+                    0.2507657409,
+                    0.5729459524
+                  ],
+                  "interactivity": true,
+                  "content": "Try It All"
+                },
+                {
+                  "type": "icon",
+                  "bbox": [
+                    0.466973871,
+                    0.0812133774,
+                    0.4736625552,
+                    0.0983865112
+                  ],
+                  "interactivity": true,
+                  "content": "Minimize - Yellow"
+                }
+              ],
+              "ocr": {
+                "texts_raw": [
+                  "File",
+                  "Edit",
+                  "Selection",
+                  "View",
+                  "Terminal",
+                  "Visual Studio Code",
+                  "EXPLORER",
+                  "processar_autospy",
+                  "OUTPUT",
+                  "TERMINAL",
+                  "PORTS",
+                  "http://localhost:5678/webhook-test/..."
+                ]
+              }
+            }
+          },
+          "elements_sample": [
+            {
+              "id": 1,
+              "type": "icon",
+              "text": "Timelineeline (Ctrl+Shift+F2)",
+              "bbox_abs": [
+                0,
+                273,
+                45,
+                317
+              ]
+            },
+            {
+              "id": 2,
+              "type": "icon",
+              "text": "Next",
+              "bbox_abs": [
+                64,
+                86,
+                76,
+                108
+              ]
+            },
+            {
+              "id": 3,
+              "type": "icon",
+              "text": "Next >",
+              "bbox_abs": [
+                50,
+                977,
+                64,
+                998
+              ]
+            },
+            {
+              "id": 4,
+              "type": "icon",
+              "text": "Try It All",
+              "bbox_abs": [
+                453,
+                601,
+                481,
+                619
+              ]
+            },
+            {
+              "id": 5,
+              "type": "icon",
+              "text": "Minimize - Yellow",
+              "bbox_abs": [
+                896,
+                88,
+                910,
+                106
+              ]
+            }
+          ],
+          "history": {
+            "last_plan": {
+              "type": "CLICK_TEXT",
+              "target_text": "Next >"
+            },
+            "last_result": {
+              "ok": true,
+              "details": "click executado"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Structured Output Parser",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "AI Agent (JUDGE)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent (JUDGE)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser1": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent (JUDGE)",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model3": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Structured Output Parser1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model4": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser2": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model5": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Structured Output Parser2",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent (JUDGE)": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "123b8131-7fbf-42c4-bcaa-c60d4d4ac683",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ff708c13ab4d6c50a5b38aea77ee10bde5d610b565d373e472ec65e5f52eeade"
+  },
+  "id": "Qmsl4peAULNlYtOc",
+  "tags": []
+}
